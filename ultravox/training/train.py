@@ -231,7 +231,7 @@ def main() -> None:
             optim=args.optimizer,
             num_train_epochs=args.num_epochs,
             max_steps=args.max_steps,
-            eval_strategy="steps",
+            evaluation_strategy="steps",
             eval_steps=args.val_steps,
             save_strategy="steps",
             save_steps=args.save_steps,
