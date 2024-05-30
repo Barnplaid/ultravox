@@ -11,6 +11,7 @@ import transformers.modeling_outputs
 import transformers.models
 
 from ultravox.model import ultravox_config
+from ultravox.model import modified_whisper
 
 
 class UltravoxModel(
@@ -190,18 +191,28 @@ class UltravoxModel(
         transformers.models.whisper.modeling_whisper.WhisperEncoder,
     ]:
         if config.audio_model_id is not None:
-            audio_tower = transformers.AutoModel.from_pretrained(config.audio_model_id)
+            if "whisper" in config.audio_model_id is not None:
+                audio_tower = modified_whisper.WhisperEncoder.from_pretrained(
+                    config.audio_model_id
+                )
+            else:
+                audio_tower = transformers.AutoModel.from_pretrained(
+                    config.audio_model_id
+                )
         else:
+            # TODO: what to do here?
             audio_tower = transformers.AutoModel.from_config(config.audio_config)
 
-        if isinstance(
-            audio_tower,
-            (transformers.Wav2Vec2BertModel, transformers.WhisperModel),
-        ):
-            # For these models we only need the encoder part
-            # Wav2Vec2BertModel -> Wav2Vec2BertEncoder
-            # WhisperModel -> WhisperEncoder
-            audio_tower = audio_tower.encoder
+        # if isinstance(
+        #     audio_tower,
+        #     (transformers.Wav2Vec2BertModel, transformers.WhisperModel),
+        # ):
+        #     # For these models we only need the encoder part
+        #     # Wav2Vec2BertModel -> Wav2Vec2BertEncoder
+        #     # WhisperModel -> WhisperEncoder
+        #     audio_tower = audio_tower.encoder
+        #     # monkey patch the forward method to use the modified version
+        #     audio_tower.forward = modified_whisper.WhisperEncoder.forward
 
         audio_tower = apply_lora(audio_tower, config.audio_model_lora_config)
         return audio_tower

@@ -84,7 +84,9 @@ def main() -> None:
     text_tokenizer.padding_side = "right"
     text_tokenizer.pad_token = text_tokenizer.eos_token
     audio_processor = transformers.AutoProcessor.from_pretrained(args.audio_model)
-    processor = ultravox_processing.UltravoxProcessor(audio_processor, text_tokenizer)
+    processor = ultravox_processing.UltravoxProcessor(
+        audio_processor, text_tokenizer, audio_padding=args.audio_padding
+    )
 
     # Instantiate the model and processor
     config = ultravox_config.UltravoxConfig(

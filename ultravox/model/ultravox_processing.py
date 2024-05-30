@@ -35,6 +35,7 @@ class UltravoxProcessor(transformers.ProcessorMixin):
         self,
         audio_processor=None,
         tokenizer=None,
+        audio_padding: str = "longest",
         encoder_ds_factor: int = 320,
         stack_factor: int = 8,
         audio_placeholder: str = "<|audio|>",
@@ -47,6 +48,7 @@ class UltravoxProcessor(transformers.ProcessorMixin):
             stack_factor: The factor by which the audio encoder output is stacked in the multimodal projector.
             audio_placeholder: The placeholder for the audio in the text.
         """
+        self.audio_padding = audio_padding
         self.encoder_ds_factor = encoder_ds_factor
         self.stack_factor = stack_factor
         self.audio_placeholder = audio_placeholder
@@ -107,7 +109,12 @@ class UltravoxProcessor(transformers.ProcessorMixin):
         data = {}
         audio_embed_frames = 0
         if audio is not None and len(audio) > 0:
-            audio_len = audio.shape[-1]
+            if self.audio_padding == "max_length" and isinstance(
+                self.audio_processor, transformers.WhisperProcessor
+            ):
+                audio_len = 30 * 16000
+            else:
+                audio_len = audio.shape[-1]
             # It's guaranteed that the number of frames is less than or equal to this amount.
             # For Whisper this is exact AFAICT, but for Wav2Vec2 it's an upper bound.
             # Currently, StackAudioFrames makes sure an over-estimation won't cause issues by padding the audio embeddings.
@@ -116,7 +123,7 @@ class UltravoxProcessor(transformers.ProcessorMixin):
             data["audio_token_len"] = [audio_embed_frames]
 
             x = self.audio_processor(
-                audio, sampling_rate=sampling_rate, padding="longest", **kwargs
+                audio, sampling_rate=sampling_rate, padding=self.audio_padding, **kwargs
             )
             if "input_features" in x:
                 data["audio_values"] = x.input_features
