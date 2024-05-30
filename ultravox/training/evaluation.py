@@ -1,3 +1,4 @@
+import os
 import concurrent.futures
 import functools
 from typing import List, Optional
@@ -8,18 +9,21 @@ from torch.utils import data
 from ultravox.data import datasets
 from ultravox.evaluation import eval
 from ultravox.evaluation import eval_types
-from ultravox.inference import base
+from ultravox.inference import infer
+from ultravox.training import ddp_utils
 
 
 def dataset_infer(
-    inference: base.VoiceInference,
+    inference: infer.LocalInference,
     ds: data.IterableDataset,
+    world_size: int = 1,
+    local_rank: int = 0,
     max_new_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
 ) -> List[eval_types.Sample]:
     eval_samples = []
-    # TODO for multiprocessing: ds -> split_batches or sharded reader
-    for sample in ds:
+
+    for sample in ddp_utils.sharded_iterator(ds, world_size, local_rank):
         # Store the original question and answer for JSON output.
         question_text = sample.audio_transcript or sample.messages[0]["content"]
         expected_answer = sample.messages[1]["content"]
@@ -36,7 +40,8 @@ def dataset_infer(
         )
         eval_samples.append(eval_sample)
 
-    # TODO for multiprocess: gather eval_samples
+    # Gather all the samples from all the processes.
+    eval_sample = ddp_utils.all_gather_list(eval_samples)
 
     return eval_samples
 
@@ -52,7 +57,7 @@ def get_metric_name(ds_name: str, metric: str) -> str:
 
 
 def evaluate(
-    inference: base.VoiceInference,
+    inference: infer.LocalInference,
     data_dir: Optional[str] = None,
     num_samples: int = 200,
     num_procs: int = 8,
@@ -61,6 +66,9 @@ def evaluate(
     verbose: bool = False,
 ):
     metrics = {}
+
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
 
     ds_args = datasets.VoiceDatasetArgs(
         data_dir=data_dir, split=datasets.DatasetSplit.VALIDATION
@@ -74,8 +82,17 @@ def evaluate(
         ds = datasets.Range(datasets.create_dataset(ds_name, ds_args), num_samples)
 
         output_samples = dataset_infer(
-            inference, ds=ds, max_new_tokens=max_new_tokens, temperature=temperature
+            inference,
+            ds=ds,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            world_size=world_size,
+            local_rank=local_rank,
         )
+
+        if local_rank != 0:
+            # Only the master process should evaluate the samples.
+            continue
 
         eval_per_sample = functools.partial(eval.evaluate_answer, metric=metric)
 
