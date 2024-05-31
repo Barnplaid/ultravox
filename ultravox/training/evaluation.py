@@ -114,10 +114,10 @@ def evaluate(
                 print(f"X: {sample.expected_answer} [score: {score:.2f}]")
 
         average = np.mean(scores)
-        std = np.std(scores)
+        std = np.std(scores) / np.sqrt(len(scores))
         metric_name = get_metric_name(ds_name, metric)
         metrics[f"eval_{metric_name}"] = average
-        metrics[f"eval_{metric_name}_std"] = std / np.sqrt(len(scores))
+        metrics[f"eval_{metric_name}_std"] = std
 
         print(f"Aggregate {metric} score for {ds_name}: {average:.2f} ± {std:.2f}")
 
