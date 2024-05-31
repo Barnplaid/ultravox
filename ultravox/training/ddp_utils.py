@@ -43,3 +43,11 @@ def sharded_iterator(ds: data.IterableDataset, num_shards: int, shard_index: int
     for i, sample in enumerate(ds):
         if i % num_shards == shard_index:
             yield sample
+
+
+if __name__ == "__main__":
+    torch.distributed.init_process_group(backend="gloo")
+    rank = torch.distributed.get_rank()
+    d = [rank * 4 + i for i in range(4)]
+    all_d = all_gather_list(d)
+    assert all_d == list(range(8))  # for 2 processes

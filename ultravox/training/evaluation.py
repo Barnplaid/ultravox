@@ -41,9 +41,7 @@ def dataset_infer(
         eval_samples.append(eval_sample)
 
     # Gather all the samples from all the processes.
-    eval_sample = ddp_utils.all_gather_list(eval_samples)
-
-    return eval_samples
+    return ddp_utils.all_gather_list(eval_samples)
 
 
 def get_metric_name(ds_name: str, metric: str) -> str:
