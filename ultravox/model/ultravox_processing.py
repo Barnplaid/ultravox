@@ -108,16 +108,15 @@ class UltravoxProcessor(transformers.ProcessorMixin):
         # TODO: Add support for multiple audio and text inputs.
         data = {}
         audio_embed_frames = 0
-        audio_padding_map = {"closest_1sec": "max_length"}
+        audio_padding_map = {"closest_1sec": "max_length", "pad_to_stack": "max_length"}
         if audio is not None and len(audio) > 0:
-            if self.audio_padding == "max_length" and isinstance(
-                self.audio_processor, transformers.WhisperProcessor
-            ):
-                audio_len = 30 * 16000
-            elif self.audio_padding == "closest_1sec" and isinstance(
-                self.audio_processor, transformers.WhisperProcessor
-            ):
-                audio_len = int(16000 * np.ceil(audio.shape[-1] / 16000 + 1e-4))
+            if self.audio_padding == "max_length":
+                audio_len = 30 * 16000  # 30 seconds is the expected length for Whisper
+            elif self.audio_padding == "closest_1sec":
+                audio_len = int(16000 * np.ceil(audio.shape[-1] / 16000))
+            elif self.audio_padding == "pad_to_stack":
+                factor = self.encoder_ds_factor * self.stack_factor
+                audio_len = int(factor * np.ceil(audio.shape[-1] / factor))
             else:
                 audio_len = audio.shape[-1]
             # It's guaranteed that the number of frames is less than or equal to this amount.
