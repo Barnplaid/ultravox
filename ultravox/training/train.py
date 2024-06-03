@@ -94,6 +94,7 @@ def main() -> None:
         text_model_id=args.text_model,
         text_model_lora_config=args.text_model_lora_config,
         audio_model_lora_config=args.audio_model_lora_config,
+        stack_factor=args.stack_factor,
     )
 
     logging.info("Instantiating model...")

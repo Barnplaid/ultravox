@@ -1,5 +1,6 @@
 text_model: "meta-llama/Meta-Llama-3-8B-Instruct"
 audio_model: "facebook/wav2vec2-base-960h"
+stack_factor: 8
 
 data_sets: ["gigaspeech"]
 repeat_data: True

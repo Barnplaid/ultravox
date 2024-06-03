@@ -18,6 +18,8 @@ class TrainConfig:
     text_model: str
     # audio encoder model to use
     audio_model: str
+    # Number of audio frames to use for each text token
+    stack_factor: int = 8
 
     # In InterleaveDataset, if one dataset runs out, should we repeat it to keep
     # the ratio of samples from each dataset fixed?
