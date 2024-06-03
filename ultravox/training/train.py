@@ -157,8 +157,9 @@ def main() -> None:
         f"Using dtype and device (world_size): {dtype}, {device} ({world_size})"
     )
     model.to(device)
-    model.language_model.to(dtype)
-    model.multi_modal_projector.to(dtype)
+    model.to(dtype)
+    # model.language_model.to(dtype)
+    # model.multi_modal_projector.to(dtype)
     # TODO: check if the whole model can now be moved to dtype instead
 
     # Prepare dataset, subsetting if needed
@@ -260,6 +261,8 @@ def main() -> None:
             # fsdp_transformer_layer_cls_to_wrap='LlamaDecoderLayer',
         ),
     )
+    if args.val_steps is not None and args.val_steps > 0:
+        trainer.evaluate()
     trainer.train()
     trainer.save_model(args.output_dir)
     if "mlflow" in args.report_logs_to and is_master:
