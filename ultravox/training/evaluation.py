@@ -4,6 +4,7 @@ import os
 from typing import List, Optional
 
 import numpy as np
+import transformers
 from torch.utils import data
 
 from ultravox.data import datasets
@@ -26,9 +27,9 @@ def dataset_infer(
     for sample in ddp_utils.sharded_iterator(ds, world_size, local_rank):
         # Store the original question and answer for JSON output.
         question_text = sample.audio_transcript or sample.messages[0]["content"]
-        expected_answer = sample.messages[1]["content"]
+        expected_answer = sample.messages[-1]["content"]
         # Drop any assistant response from the sample.
-        sample.messages = sample.messages[:1]
+        sample.messages = sample.messages[:-1]
 
         output = inference.infer(
             sample, max_tokens=max_new_tokens, temperature=temperature
@@ -73,6 +74,7 @@ def evaluate(
     )
 
     for ds_name, metric in [
+        ("expresso", "asr"),
         ("boolq_in", "asr"),
         ("boolq", "boolq"),
         ("boolq_passage", "binary"),
