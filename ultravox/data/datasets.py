@@ -159,6 +159,10 @@ class VoiceSample:
         if self.audio is not None:
             if self.audio.dtype == np.float64:
                 self.audio = self.audio.astype(np.float32)
+            elif self.audio.dtype == np.int32:
+                self.audio = self.audio.astype(np.float32) / np.float32(2147483648)
+            elif self.audio.dtype == np.int16:
+                self.audio = self.audio.astype(np.float32) / np.float32(32768.0)
             assert (
                 self.audio.dtype == np.float32
             ), f"Unexpected audio dtype: {self.audio.dtype}"
@@ -495,20 +499,35 @@ class BoolQWithPassageDataset(BoolQDataset):
 
 
 class ExpressoDataset(VoiceDataset):
+    EMOTIONS = set(
+        [
+            "angry",
+            "confused",
+            "desire",
+            "disgusted",
+            "fearful",
+            "happy",
+            "laughing",
+            "sad",
+        ]
+    )
+
     def __init__(self, args: VoiceDatasetArgs) -> None:
         super().__init__(args)
         dataset = self._load_audio_dataset("fixie-ai/expresso", split=args.split.value)
         self._init_dataset(dataset)
 
     def _get_sample(self, idx: int, row: transformers.BatchFeature) -> VoiceSample:
+        style = row["style"].replace("default", "neutral")
+        category = "Emotion" if style in self.EMOTIONS else "Style"
         messages = [
             {
                 "role": "user",
-                "content": "Continue the following sentence based on the conveyed emotional tone in a coherent style:\n<|audio|>",
+                "content": "Describe the style or conveyed emotion of the speaker, then continue the sentence based on that:\n<|audio|>",
             },
             {
                 "role": "assistant",
-                "content": f"{row['continuation']}",
+                "content": f"{category}: {row['style']}\n{row['continuation']}",
             },
         ]
 
