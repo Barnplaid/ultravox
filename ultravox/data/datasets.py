@@ -6,7 +6,7 @@ import io
 import logging
 import os
 import tempfile
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import datasets
 import librosa
@@ -56,6 +56,21 @@ ANSWER_PROMPTS = [
     "First listen to the clip: <|audio|>\n How would you respond?",
     "<|audio|> - respond",
     "<|audio|>\n Respond to the question",
+]
+
+
+BOOLQ_PASSAGE_PROMPTS = [
+    "Provide a short explanation, then respond with True/False on the last line",
+    "Explain briefly, concluding with True/False on a new line."
+    "Write a quick explanation, and finish with True/False on the last line"
+    "Summarize in a few words, and end with True/False on a new line."
+    "Give a brief explanation first, then answer with True/False on the final line",
+    "Start with a concise explanation, and end with a True/False response on the last line.",
+    "Explain briefly and follow up with True/False at the end",
+    "Write a short explanation, then state True/False on a new line.",
+    "First, offer a brief explanation, and then reply with True/False at the end.",
+    "Present a concise explanation, ending with a True/False answer on the final line",
+    "Start with a brief explanation, and then answer with True/False at the end.",
 ]
 
 # TODO(juberti): set these in the environment so they don't need to be hard-coded here.
@@ -478,18 +493,75 @@ class BoolQInputDataset(BoolQDataset):
         return self._get_transcribe_sample(idx, row, tcol="question")
 
 
-class BoolQWithPassageDataset(BoolQDataset):
+class BoolQWithExtendedAnswerDataset(BoolQDataset):
+    SEPARATORS = ["\n\n", "\n", "\n----\n"]
+    QUERY_PROMPTS = ["Question: ", "Question:\n", "Q: ", "Q:\n", "Query: ", "Query:\n"]
+    CONTEXT_PROMPTS = [
+        "Passage: ",
+        "Passage:\n",
+        "Context: ",
+        "Context:\n",
+        "Background: ",
+        "Background:\n",
+    ]
+    ANSWER_PROMPTS = [
+        "Answer: ",
+        "A: ",
+        "",
+        "The answer is: ",
+        "Result: ",
+        "Conclusion: ",
+    ]
+
+    def _get_query_and_answer_prompts(self, idx: int, context: str) -> Tuple[str, str]:
+        """
+        Creates a random prompt for a BoolQ sample with a passage and question.
+
+        Example prompt:
+            Passage: ...
+
+            Question: <|audio|>
+
+            Provide a short explanation, then respond with True/False on the last line.
+        """
+        if self._args.prompt:
+            return self._args.prompt
+        prompt_idx = idx % min(self._args.num_prompts, len(BOOLQ_PASSAGE_PROMPTS))
+        prompt = BOOLQ_PASSAGE_PROMPTS[prompt_idx]
+
+        # Separate either with 1 or 2 newlines, depending on idx
+        # 13, 17, 19 are prime numbers (to avoid a pattern)
+        separator = self.SEPARATORS[
+            idx % 13 % min(self._args.num_prompts, len(self.SEPARATORS))
+        ]
+
+        query_prompt = self.QUERY_PROMPTS[
+            idx % 17 % min(self._args.num_prompts, len(self.QUERY_PROMPTS))
+        ]
+        prompt = f"{query_prompt}<|audio|>{separator}{prompt}"
+
+        if self._args.include_context:
+            context_prompt = self.CONTEXT_PROMPTS[
+                idx % 19 % min(self._args.num_prompts, len(self.CONTEXT_PROMPTS))
+            ]
+            prompt = f"{context_prompt}{context}{separator}{prompt}"
+
+        answer_prompt = self.ANSWER_PROMPTS[
+            idx % 23 % min(self._args.num_prompts, len(self.ANSWER_PROMPTS))
+        ]
+
+        return prompt, answer_prompt
+
     def _get_sample(self, idx: int, row: transformers.BatchFeature) -> VoiceSample:
         answer = "True" if row["answer"] else "False"
-        # preamble = f"Passage: {row['passage']}\n\n" if self._args.include_context else ""
+        user_message, answer_prompt = self._get_query_and_answer_prompts(
+            idx, row["passage"]
+        )
         messages = [
-            {
-                "role": "user",
-                "content": f"Passage: {row['passage']}\n\nQuestion: <|audio|>\n\nProvide a short explanation, then respond with True/False on the last line.",
-            },
+            {"role": "user", "content": user_message},
             {
                 "role": "assistant",
-                "content": f"{row['explanation']}\nAnswer: {answer}",
+                "content": f"{row['explanation']}\n{answer_prompt}{answer}",
             },
         ]
 
@@ -654,7 +726,7 @@ def create_dataset(name: str, args: VoiceDatasetArgs) -> data.IterableDataset:
         "anyinstruct_out": AnyInstructOutputDataset,
         "boolq": BoolQDataset,
         "boolq_in": BoolQInputDataset,
-        "boolq_passage": BoolQWithPassageDataset,
+        "boolq_passage": BoolQWithExtendedAnswerDataset,
         "expresso": ExpressoDataset,
         "gigaspeech": GigaSpeechDataset,
         "librispeech": LibriSpeechDataset,
