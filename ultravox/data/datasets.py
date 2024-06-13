@@ -6,7 +6,7 @@ import io
 import logging
 import os
 import tempfile
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import datasets
 import librosa
@@ -449,7 +449,7 @@ class AnyInstructInputDataset(AnyInstructDataset):
 
     def _get_sample(self, idx: int, row: transformers.BatchFeature) -> VoiceSample:
         audio_transcript = row["chat"][0]["message"]
-        return VoiceSample(
+        return self._make_sample(
             self._get_transcribe_messages(idx, audio_transcript),
             self._load_anyinstruct_audio(row["chat"][0]["speech"]),
             audio_transcript=audio_transcript,
@@ -462,7 +462,7 @@ class AnyInstructOutputDataset(AnyInstructDataset):
 
     def _get_sample(self, idx: int, row: transformers.BatchFeature) -> VoiceSample:
         audio_transcript = row["chat"][1]["message"]
-        return VoiceSample(
+        return self._make_sample(
             self._get_transcribe_messages(idx, audio_transcript),
             self._load_anyinstruct_audio(row["chat"][1]["speech"]),
             audio_transcript=audio_transcript,
@@ -513,14 +513,14 @@ class BoolQWithExtendedAnswerDataset(BoolQDataset):
         "Conclusion: ",
     ]
 
-    def _get_query_and_answer_prompts(self, idx: int, context: str) -> Tuple[str, str]:
+    def _get_query_prompt(self, idx: int) -> str:
         """
         Creates a random prompt for a BoolQ sample with a passage and question.
 
         Example prompt:
-            Passage: ...
+            Passage: {context}
 
-            Question: <|audio|>
+            Question: {question}
 
             Provide a short explanation, then respond with True/False on the last line.
         """
@@ -538,34 +538,35 @@ class BoolQWithExtendedAnswerDataset(BoolQDataset):
         query_prompt = self.QUERY_PROMPTS[
             idx % 17 % min(self._args.num_prompts, len(self.QUERY_PROMPTS))
         ]
-        prompt = f"{query_prompt}<|audio|>{separator}{prompt}"
+        prompt = f"{query_prompt}{{question}}{separator}{prompt}"
 
         if self._args.include_context:
             context_prompt = self.CONTEXT_PROMPTS[
                 idx % 19 % min(self._args.num_prompts, len(self.CONTEXT_PROMPTS))
             ]
-            prompt = f"{context_prompt}{context}{separator}{prompt}"
+            prompt = f"{context_prompt}{{context}}{separator}{prompt}"
 
-        answer_prompt = self.ANSWER_PROMPTS[
-            idx % 23 % min(self._args.num_prompts, len(self.ANSWER_PROMPTS))
-        ]
-
-        return prompt, answer_prompt
+        return prompt
 
     def _get_sample(self, idx: int, row: transformers.BatchFeature) -> VoiceSample:
         answer = "True" if row["answer"] else "False"
-        user_message, answer_prompt = self._get_query_and_answer_prompts(
-            idx, row["passage"]
+        answer_prompt = self.ANSWER_PROMPTS[
+            idx % 23 % min(self._args.num_prompts, len(self.ANSWER_PROMPTS))
+        ]
+        query_prompt = self._get_query_prompt(idx)
+        user_content = query_prompt.format(
+            question="<|audio|>" if self._args.include_audio else row["question"],
+            context=row["passage"],
         )
         messages = [
-            {"role": "user", "content": user_message},
+            {"role": "user", "content": user_content},
             {
                 "role": "assistant",
                 "content": f"{row['explanation']}\n{answer_prompt}{answer}",
             },
         ]
 
-        return VoiceSample(
+        return self._make_sample(
             messages, self._get_audio(row), audio_transcript=row["question"]
         )
 
