@@ -12,54 +12,60 @@ An open, fast, and extensible multimodal LLM
 
 Ultravox is a new kind of multimodal LLM that can understand text as well as human speech, without the need for a separate Audio Speech Recognition (ASR) stage. Building on research like [AudioLM](https://arxiv.org/abs/2209.03143), [SeamlessM4T](https://ai.meta.com/blog/seamless-m4t/), [Gazelle](https://tincans.ai/slm), [SpeechGPT](https://github.com/0nutation/SpeechGPT/tree/main/speechgpt), and others, we've extended Meta's [Llama 3 model](https://llama.meta.com/llama3/) with a multimodal projector that converts audio directly into the high-dimensional space used by Llama 3. This direct coupling allows Ultravox to respond much more quickly than systems that combine separate ASR and LLM components. In the future this will also allow Ultravox to natively understand the paralinguistic cues of timing and emotion that are omnipresent in human speech.
 
-The current version of Ultravox (v0.1), when invoked with audio content has a time-to-first-token (TTFT) of approximately 200ms, and a tokens-per-second rate of ~100, all using a Llama 3 8B backbone. While quite fast, we believe there is considerable room for improvement in these numbers.
+The current version of Ultravox (v0.1), when invoked with audio content, has a time-to-first-token (TTFT) of approximately 200ms, and a tokens-per-second rate of ~100, all using a Llama 3 8B backbone. While quite fast, we believe there is considerable room for improvement in these numbers. We look forward to working with LLM hosting providers to deliver state-of-the-art performance for Ultravox.
 
-Ultravox currently takes in audio and emits speech. As we evolve the model, we'll train it to be able to emit a stream of speech tokens that can then be converted directly into raw audio by an appropriate unit vocoder. We're interested in working with interested parties to build this functionality!
+Ultravox currently takes in audio and emits streaming text. As we evolve the model, we'll train it to be able to emit a stream of speech tokens that can then be converted directly into raw audio by an appropriate unit vocoder. We're interested in working with interested parties to build this functionality!
 
 ### Demo
 
-Coming soon!
+See Ultravox in action via a [voice call](https://www.ai.town/characters/a90fcca3-53c0-4111-b30a-4984883a23ef) with an AI in our app, [ai.town](https://ai.town).
+(*Note: there's been a lot of traffic to our inference server and we've hit a few bugs. If the demo seems to be erroring out please try again in a bit.*)
 
 ### Discord
 
-Join us on our Discord server [here](https://discord.gg/YhX5GjCH).
+Join us on our Discord server [here](https://discord.gg/Qw6KHxv8YB).
+
+### Jobs
+
+If you're interested in working on Ultravox fulltime, we're hiring! Check out our jobs page [here](https://www.notion.so/fixieai/Careers-at-Fixie-fc1a7ace4c1e42a8886065bc397aba2d).
 
 ### Inference Server
 
 You can try out Ultravox using your own audio content (as a WAV file), using the following curl command:
 
-```
-curl -X POST -H "Authorization: Bearer $ULTRAVOX_API_KEY" -d @data.json https://ultravox.api.fixie.ai/v1/chat/completions
+```shell
+curl -X POST -H "Authorization: Bearer $ULTRAVOX_API_KEY" -H "Content-Type: application/json" \
+     -d @data.json https://ultravox.api.fixie.ai/v1/chat/completions
 ```
 
 where `data.json` contains:
 
-```
-{
+```json
+{ 
   "model": "fixie-ai/ultravox-v0.1",
-  "content": [
-        {
-          "type": "text",
-          "text": "What’s in <|audio|>?"
-        },
-        {
-          "type": "image_url",
-          "image_url": {
-            "url": f"data:audio/wav;base64,{base64_wav}"
-          }
-        }
-      ],
+  "messages": [{ 
+    "role": "user",
+    "content": [{
+      "type": "text",
+      "text": "What’s in <|audio|>?"
+    }, {
+      "type": "image_url",
+      "image_url": {
+        "url": "data:audio/wav;base64,{base64_wav}"
+      }
+    }]
+  }],
   "stream": true
 }
 ```
 
 ### Model
 
-You can download the latest weights from the [Ultravox Hugging Face page](https://huggingface.co/fixie-ai/ultravox).
+You can download the latest weights from the [Ultravox Hugging Face page](https://huggingface.co/fixie-ai/ultravox-v0.2).
 
 ### Architecture
 
-https://docs.google.com/presentation/d/1ey81xuuMzrJaBwztb_Rq24Cit37GQokD2aAes_KkGVI/edit
+[![architecture diagram](https://raw.githubusercontent.com/fixie-ai/ultravox/main/docs/assets/Ultravox%20Model%20Architecture.svg)](https://docs.google.com/presentation/d/1ey81xuuMzrJaBwztb_Rq24Cit37GQokD2aAes_KkGVI/edit)
 
 # Contributing
 
@@ -81,11 +87,10 @@ brew install just
 Create a Python virtual environment and install the necessary packages:
 
 ```bash
-just create-env
+just install
 ```
 
-For now we're using venv for Python virtual environments.
-We may switch to `Poetry` in the future.
+We're using Poetry to manage the Python virtual environment.
 
 ### Mosaic Environment Setup
 
@@ -176,7 +181,4 @@ Useful commands:
 just update    # update dependencies
 just format    # run formatting (black, isort, autoflake)
 just python    # activate venv and run python
-just pip       # install a package in the venv using the right pip
 ```
-
-The `legacy` directory contains some initial experiments. We'll pull in the useful parts as we go.

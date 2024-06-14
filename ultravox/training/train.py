@@ -5,9 +5,9 @@ import os
 import re
 import sys
 from datetime import datetime
+from typing import List, Optional
 
 import datasets as hf_datasets
-import mlflow
 import safetensors.torch
 import simple_parsing
 import torch
@@ -15,10 +15,10 @@ import torch.distributed
 import transformers
 import wandb
 from torch.distributed.elastic.multiprocessing.errors import record
+from torch.utils import data
 
 from ultravox.data import datasets
 from ultravox.inference import infer
-from ultravox.inference import ultravox_infer
 from ultravox.model import ultravox_config
 from ultravox.model import ultravox_model
 from ultravox.model import ultravox_processing
@@ -31,19 +31,26 @@ INPUT_EXAMPLE = {"text": "Transcribe <|audio|>", "audio": b"\x00\x00" * 16000}
 OUTPUT_EXAMPLE = {"text": "Hello, world!"}
 
 
-class GazelleMlflowWrapper(mlflow.pyfunc.PythonModel):
-    def predict(self, context, model_input):
-        sample = datasets.VoiceSample.from_prompt_and_buf(
-            model_input["text"], model_input["audio"]
-        )
-        return self.inference.infer(sample)
-
-    def load_context(self, context):
-        self.inference = ultravox_infer.UltravoxInference(context.artifacts["model_id"])
-
-
 def fix_hyphens(arg: str):
     return re.sub(r"^--([^=]+)", lambda m: "--" + m.group(1).replace("-", "_"), arg)
+
+
+def prepare_dataset(
+    dataset_names: List[str],
+    data_args: datasets.VoiceDatasetArgs,
+    processor: ultravox_processing.UltravoxProcessor,
+    train_on_inputs: bool,
+    repeat_data: bool,
+    num_samples: Optional[int] = None,
+) -> data.IterableDataset:
+
+    data_sets = [datasets.create_dataset(ds, data_args) for ds in dataset_names]
+    interleave = datasets.InterleaveDataset(data_sets, repeat=repeat_data)
+    ds_with_proc = ultravox_processing.UltravoxDataproc(
+        interleave, processor=processor, train_on_inputs=train_on_inputs
+    )
+    limited_ds = datasets.Range(ds_with_proc, num_samples=num_samples)
+    return limited_ds
 
 
 @record
@@ -129,12 +136,6 @@ def main() -> None:
             dir="runs",
         )
 
-    # Starting MLflow; we need to set the experiment name before training starts.
-    if "mlflow" in args.report_logs_to and is_master:
-        mlflow.set_tracking_uri("runs/mlruns")
-        db_exp_name = f"/Shared/{args.exp_name}"
-        mlflow.set_experiment(db_exp_name)
-
     if args.model_load_dir:
         logging.info(f"Loading model state dict from {args.model_load_dir}")
         load_path = args.model_load_dir
@@ -160,53 +161,46 @@ def main() -> None:
     logging.info(
         f"Using dtype and device (world_size): {dtype}, {device} ({world_size})"
     )
-    model.to(device)
-    model.to(dtype)
-    # model.language_model.to(dtype)
-    # model.multi_modal_projector.to(dtype)
+    model.to(device=device, dtype=dtype)
     # TODO: check if the whole model can now be moved to dtype instead
 
     # Prepare dataset, subsetting if needed
+    train_dataset: data.IterableDataset
+    val_dataset: data.IterableDataset
     if is_master:
-        data_args = datasets.VoiceDatasetArgs(
-            num_prompts=args.num_prompts,
-            data_dir=args.data_dir,
-            shuffle=args.shuffle_data,
-            shuffle_seed=args.shuffle_seed,
-            max_audio_duration_secs=args.max_audio_duration_secs,
-            use_mds=args.mds,
-            mds_batch_size=args.batch_size,
+        train_dataset = prepare_dataset(
+            dataset_names=args.data_sets,
+            train_on_inputs=args.train_on_inputs,
+            repeat_data=args.repeat_data,
+            processor=processor,
+            num_samples=args.num_samples,
+            data_args=datasets.VoiceDatasetArgs(
+                num_prompts=args.num_prompts,
+                data_dir=args.data_dir,
+                shuffle=args.shuffle_data,
+                shuffle_seed=args.shuffle_seed,
+                max_audio_duration_secs=args.max_audio_duration_secs,
+                use_mds=args.mds,
+                mds_batch_size=args.batch_size,
+            ),
         )
-        val_data_args = datasets.VoiceDatasetArgs(
-            num_prompts=1,
-            data_dir=args.data_dir,
-            shuffle=False,
-            max_audio_duration_secs=16,
-            use_mds=args.mds,
-            mds_batch_size=args.batch_size,
+        val_dataset = prepare_dataset(
+            dataset_names=args.data_sets,
+            train_on_inputs=args.train_on_inputs,
+            repeat_data=args.repeat_data,
+            processor=processor,
+            num_samples=args.val_num_samples,
+            data_args=datasets.VoiceDatasetArgs(
+                num_prompts=1,
+                data_dir=args.data_dir,
+                shuffle=False,
+                max_audio_duration_secs=16,
+                use_mds=args.mds,
+                mds_batch_size=args.batch_size,
+            ),
         )
-        train_dataset, val_dataset = [
-            datasets.Range(
-                ultravox_processing.UltravoxDataproc(
-                    datasets.InterleaveDataset(
-                        [
-                            datasets.create_dataset(ds, split_args)
-                            for ds in args.data_sets
-                        ],
-                        repeat=args.repeat_data,
-                    ),
-                    processor=processor,
-                    train_on_inputs=args.train_on_inputs,
-                ),
-                num_samples=num_samples,
-            )
-            for split_args, num_samples in [
-                (data_args, args.num_samples),
-                (val_data_args, args.val_num_samples),
-            ]
-        ]
         logging.info(
-            f"Loaded {args.data_sets} data sets, sample limit: {args.num_samples} (val samples: {args.val_num_samples})"
+            f"Loaded {args.data_sets} data sets, sample limit: {args.num_samples} (val sample limit: {args.val_num_samples})"
         )
     else:
         # When using DDP with split_batches=True, the primary process will distribute the batches to the workers
@@ -248,7 +242,7 @@ def main() -> None:
             per_device_train_batch_size=args.batch_size * world_size,
             accelerator_config={"split_batches": True},
             gradient_accumulation_steps=args.grad_accum_steps,
-            eval_accumulation_steps=args.eval_accum_steps,
+            eval_accumulation_steps=args.val_accum_steps,
             # tf32=dtype == torch.float32 and device.type == "cuda",  # TODO: check for Ampere GPU not just CUDA
             ddp_find_unused_parameters=False,
             learning_rate=args.lr,
@@ -269,20 +263,6 @@ def main() -> None:
         trainer.evaluate()
     trainer.train()
     trainer.save_model(args.output_dir)
-    if "mlflow" in args.report_logs_to and is_master:
-        signature = mlflow.models.signature.infer_signature(
-            INPUT_EXAMPLE, OUTPUT_EXAMPLE
-        )
-        model_info = mlflow.pyfunc.log_model(
-            python_model=GazelleMlflowWrapper(),
-            artifact_path="model",
-            pip_requirements="requirements.txt",
-            registered_model_name="ultravox",
-            input_example=INPUT_EXAMPLE,
-            signature=signature,
-        )
-        logging.info(f"Model logged to MLflow: {model_info.model_uri}")
-
     t_end = datetime.now()
     logging.info(f"end time: {t_end}")
     logging.info(f"elapsed: {t_end - t_start}")

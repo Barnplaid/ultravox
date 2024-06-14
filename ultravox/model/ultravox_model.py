@@ -11,7 +11,7 @@ import transformers.modeling_outputs
 import transformers.models
 
 from ultravox.model import ultravox_config
-from ultravox.model import modified_whisper
+from ultravox.model import whisper_model_modified
 
 
 class UltravoxModel(
@@ -192,7 +192,7 @@ class UltravoxModel(
     ]:
         if config.audio_model_id is not None:
             if "whisper" in config.audio_model_id is not None:
-                audio_tower = modified_whisper.WhisperEncoder.from_pretrained(
+                audio_tower = whisper_model_modified.WhisperEncoder.from_pretrained(
                     config.audio_model_id
                 )
             else:
@@ -200,8 +200,10 @@ class UltravoxModel(
                     config.audio_model_id
                 )
         else:
-            # TODO: what to do here?
-            audio_tower = transformers.AutoModel.from_config(config.audio_config)
+            if "whisper" in config.audio_config._name_or_path:
+                audio_tower = whisper_model_modified.WhisperEncoder(config.audio_config)
+            else:
+                audio_tower = transformers.AutoModel.from_config(config.audio_config)
 
         # if isinstance(
         #     audio_tower,

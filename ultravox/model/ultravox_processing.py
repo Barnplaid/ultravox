@@ -44,6 +44,7 @@ class UltravoxProcessor(transformers.ProcessorMixin):
         Args:
             audio_processor: The audio processor for the audio encoder.
             tokenizer: The tokenizer for the language model.
+            audio_padding: The padding strategy for the audio encoder.
             encoder_ds_factor: The downsample factor of the audio encoder.
             stack_factor: The factor by which the audio encoder output is stacked in the multimodal projector.
             audio_placeholder: The placeholder for the audio in the text.
@@ -111,12 +112,9 @@ class UltravoxProcessor(transformers.ProcessorMixin):
         audio_padding_map = {"closest_1sec": "max_length", "pad_to_stack": "max_length"}
         if audio is not None and len(audio) > 0:
             if self.audio_padding == "max_length":
-                audio_len = 30 * 16000  # 30 seconds is the expected length for Whisper
-            elif self.audio_padding == "closest_1sec":
-                audio_len = int(16000 * np.ceil(audio.shape[-1] / 16000))
-            elif self.audio_padding == "pad_to_stack":
-                factor = self.encoder_ds_factor * self.stack_factor
-                audio_len = int(factor * np.ceil(audio.shape[-1] / factor))
+                # 30 seconds is the expected length for Whisper
+                assert sampling_rate is not None, "Sampling rate must be provided."
+                audio_len = 30 * sampling_rate
             else:
                 audio_len = audio.shape[-1]
             # It's guaranteed that the number of frames is less than or equal to this amount.
@@ -129,7 +127,7 @@ class UltravoxProcessor(transformers.ProcessorMixin):
             x = self.audio_processor(
                 audio,
                 sampling_rate=sampling_rate,
-                padding=audio_padding_map.get(self.audio_padding, self.audio_padding),
+                padding="longest",
                 max_length=audio_len,
                 **kwargs,
             )
@@ -215,7 +213,7 @@ class UltravoxDataproc(datasets.Dataproc):
             sample.messages, tokenize=False
         )
 
-        # Process audio and text using GazelleProcessor.
+        # Process audio and text using UltravoxProcessor.
         # Audio is expanded to be a [C x M] array, although C=1 for mono audio.
         audio = (
             np.expand_dims(sample.audio, axis=0) if sample.audio is not None else None
