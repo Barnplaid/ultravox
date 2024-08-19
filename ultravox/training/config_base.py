@@ -62,6 +62,11 @@ class TrainConfig:
     audio_model_lora_config: Optional[ultravox_config.LoraConfigSimplified] = None
     disable_layerdrop: bool = False
 
+    # FSDP settings
+    fsdp: str = ""  # alternative: "full_shard auto_wrap"
+    # alternatie: {"transformer_layer_cls_to_wrap": "LlamaDecoderLayer"}
+    fsdp_config: Dict[str, Any] = dataclasses.field(default_factory=dict)
+
     # The experiment name
     exp_name: Optional[str] = None
     output_dir: Optional[Path] = None

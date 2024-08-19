@@ -278,8 +278,8 @@ def main() -> None:
             seed=args.seed + local_rank,
             report_to=args.report_logs_to,
             # torch_compile=True,
-            # fsdp="full_shard auto_wrap",
-            # fsdp_transformer_layer_cls_to_wrap='LlamaDecoderLayer',
+            fsdp=args.fsdp,
+            fsdp_config=args.fsdp_config,
         ),
     )
     if args.do_train:
