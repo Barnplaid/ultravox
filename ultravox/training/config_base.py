@@ -3,7 +3,7 @@ import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import simple_parsing
 import torch
@@ -21,7 +21,10 @@ class TrainConfig:
     text_model: str
     # audio encoder model to use
     audio_model: str
-
+    # adapter type:
+    adapter_type: ultravox_config.AdapterType = ultravox_config.AdapterType.STACKING
+    adapter_config: Optional[Dict[str, Any]] = None
+    
     # The data_dicts field complements data_sets, allowing for the inclusion of
     # new datasets in the config.
     #
@@ -129,3 +132,18 @@ class TrainConfig:
                 "LayerDrop cannot be used in DDP when encoder is not frozen. Disabling LayerDrop."
             )
             self.disable_layerdrop = True
+
+        if self.adapter_type is ultravox_config.AdapterType.STACKING:
+            self.adapter_config = ultravox_config.UltravoxStackingAdapterConfig(
+                **(self.adapter_config or {})
+            )
+        elif self.adapter_type is ultravox_config.AdapterType.CFORMER:
+            self.adapter_config = ultravox_config.UltravoxCFormerAdapterConfig(
+                **(self.adapter_config or {})
+            )
+        else:
+            raise ValueError(f"Unsupported adapter type: {self.adapter_type}")
+
+        if self.loss_config is None:
+            self.loss_config = ultravox_config.LossConfig()
+        self.loss_config.add_adapter_losses(self.adapter_type)
